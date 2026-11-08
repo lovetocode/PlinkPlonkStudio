@@ -4,10 +4,12 @@ const KEYBOARD := preload("res://scripts/keyboard.gd")
 const DRUMS := preload("res://scripts/drums.gd")
 const MIXER := preload("res://scripts/mixer.gd")
 const THEREMIN := preload("res://scripts/theremin.gd")
-const TOP_BAR := 70.0
+const TOP_BAR := 120.0
 const SING := preload("res://scripts/sing.gd")
+const SEQ := preload("res://scripts/sequencer.gd")
+var sequencer
 
-const AREAS := ["Piano", "Drums", "Piano + Drums", "mixer", "Theremin", "sing", "record"]
+const AREAS := ["Piano", "Drums", "Piano + Drums", "mixer", "Theremin", "sing", "record", "Sequencer"]
 const SOUNDS := ["Square", "Piano", "Organ", "E-Piano", "Harpsichord", "Xylophone", "Glass Harmonica", "Guitar", "Bass", "Sample", "Saw", "Chip Saw", "Pulse 12", "Pulse 25", "Triangle", "8-Bit Noise", "8-Bit Metal", "VRC6 Saw" , "Curtis Wah", "Curtis Clean"]
 
 const AUTO_BEATS := [1.0, 0.5, 2.0]
@@ -20,7 +22,7 @@ const RECORDER := preload("res://scripts/recorder.gd")
 var recorder
 
 var vbox: VBoxContainer
-var top_row: HBoxContainer
+var top_row: HFlowContainer
 var drums
 var mixer
 var theremin
@@ -50,6 +52,7 @@ var sing
 var vocal_count := 0
 var bpm_box: SpinBox
 var hands_swapped := false
+const TOP_H := 120.0
 
 const THEMES := [
 	{"name": "Classic", "white": Color.WHITE, "black": Color.BLACK, "pressed": Color(0.4, 0.7, 1.0), "border": Color.DIM_GRAY},
@@ -92,6 +95,14 @@ func _ready() -> void:
 	mixer = MIXER.new()
 	mixer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(mixer)
+	
+	sequencer = SEQ.new()
+	sequencer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sequencer.drums = drums
+	sequencer.bpm = bpm
+	sequencer.render_ready.connect(on_seq_render)
+	vbox.add_child(sequencer)
+	
 
 	theremin = THEREMIN.new()
 	theremin.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -120,16 +131,15 @@ func build_top_bar() -> void:
 	bar_bg.offset_bottom = TOP_BAR
 	bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bar_bg)
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.position = Vector2(0, 8)
-	scroll.size = Vector2(get_viewport_rect().size.x, 56)
-	scroll.z_index = 10
-	add_child(scroll)
-	top_row = HBoxContainer.new()
+	top_row = HFlowContainer.new()
+	top_row.add_theme_constant_override("h_separation", 8)
+	top_row.add_theme_constant_override("v_separation", 6)
+	top_row.z_index = 10
+	add_child(top_row)
+	top_row.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top_row.offset_top = 6
+	top_row.offset_bottom = TOP_BAR
 	top_row.add_theme_constant_override("separation", 8)
-	scroll.add_child(top_row)
 
 	# 1. File menu (far left)
 	file_menu = add_menu("File", 100, ["Load WAV", "Save take", "Send take to mixer", "Save project", "Load project", "Backing: use last take", "Backing: load WAV", "Backing: play/stop"], on_file_item)
@@ -222,11 +232,11 @@ func apply_theme() -> void:
 	var p := view_menu.get_popup()
 	for i in THEMES.size():
 		p.set_item_text(i, ("● " if i == theme_index else "    ") + THEMES[i].name)
-	for c in kbs + [drums, mixer, theremin, sing, recorder]:
+	for c in kbs + [drums, mixer, theremin, sing, recorder, sequencer]:
 		c.colors = t
 		c.queue_redraw()
 	var th := make_theme(t)
-	for c in [mixer, sing, recorder]:
+	for c in [mixer, sing, recorder, sequencer]:
 		c.theme = th
 	if top_row and bar_bg:
 		style_bar()
@@ -280,6 +290,7 @@ func save_project(path: String) -> void:
 		"backing": pack_wav(backing_player.stream as AudioStreamWAV),
 		"octaves": [kbs[0].start_note, kbs[1].start_note],
 		"sing": sing.get_settings(),
+		"seq": sequencer.get_state(),
 	})
 	f.close()
 
@@ -299,6 +310,8 @@ func load_project(path: String) -> void:
 		theme_index = d["themes"][2]
 	apply_theme()
 	mixer.set_state(d.get("tracks", []))
+	
+	sequencer.set_state(d.get("seq", {}))
 
 	var kw := unpack_wav(d.get("keyboard", {}))
 	var sample_idx := SOUNDS.find("Sample")
@@ -351,6 +364,7 @@ func load_project(path: String) -> void:
 		auto_btn.select(clampi(d.get("auto_pad", 0), 0, auto_btn.item_count - 1))
 		auto_beats_btn.select(clampi(d.get("auto_beats", 0), 0, auto_beats_btn.item_count - 1))
 		update_auto()
+		
 
 func set_area(i: int) -> void:
 	for kb in kbs:
@@ -368,6 +382,7 @@ func set_area(i: int) -> void:
 	if area_btn:
 		area_btn.select(i)
 	sing.visible = (i == 5)
+	sequencer.visible = (i == 7)
 	var on_drums := (i == 1 or i == 2)
 	if swap_btn:
 		swap_btn.visible = on_drums
@@ -376,6 +391,7 @@ func set_area(i: int) -> void:
 		if not on_drums:
 			auto_btn.select(0)
 			update_auto()
+	
 
 func set_sound(i: int) -> void:
 	for kb in kbs:
@@ -538,6 +554,9 @@ func set_bpm(v: float) -> void:
 		sing.bpm = bpm
 	if auto_btn:
 		update_auto()
+		
+	if sequencer:
+		sequencer.bpm = bpm
 	
 
 func take_as_backing() -> void:
@@ -694,3 +713,11 @@ func make_theme(t: Dictionary) -> Theme:
 
 	th.set_color("font_color", "Label", on_black)
 	return th
+	
+func on_seq_render(list: Array) -> void:
+	for t in mixer.tracks.duplicate():
+		if t.name.begins_with("Seq "):
+			mixer.remove_track(t)
+	for e in list:
+		mixer.add_track(e.name, e.wav)
+	set_area(3)
