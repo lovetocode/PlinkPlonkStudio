@@ -142,7 +142,7 @@ func build_top_bar() -> void:
 	top_row.add_theme_constant_override("separation", 8)
 
 	# 1. File menu (far left)
-	file_menu = add_menu("File", 100, ["Load WAV", "Save take", "Send take to mixer", "Save project", "Load project", "Backing: use last take", "Backing: load WAV", "Backing: play/stop"], on_file_item)
+	file_menu = add_menu("File", 100, ["Load WAV", "Save take", "Send take to mixer", "Save project", "Load project", "Backing: use last take", "Backing: load WAV", "Backing: play/stop", "Quit"], on_file_item)
 	# 2. Area
 	area_btn = add_dropdown(AREAS, 140, set_area)
 	# 3. Instrument sound
@@ -259,6 +259,9 @@ func on_file_item(id: int) -> void:
 		load_backing()
 	elif id == 7:
 		toggle_backing()
+	elif id == 8:
+		get_tree().quit()
+	
 
 func save_project(path: String) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)

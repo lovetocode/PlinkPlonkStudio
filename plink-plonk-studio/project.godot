@@ -13,7 +13,7 @@ config_version=5
 config/name="PlinkPlonkStudio"
 run/main_scene="uid://b8wpk2dmdfqwn"
 config/features=PackedStringArray("4.7", "Mobile")
-config/icon="res://icon.svg"
+config/icon="uid://d0qnavuxn3o48"
 
 [audio]
 

@@ -290,11 +290,29 @@ func _process(delta: float) -> void:
 		var mult: float = pow(2.0, v.scoop / 12.0)
 		var vib: float = cur_vib * clampf(v.age * 2.0, 0.0, 1.0)
 		var weights: Array = cur_harm
+		var norm: float = cur_norm
 		if cur_wah_hi > 0.0 and not cur_harm.is_empty():
 			weights = []
 			for h in cur_harm.size():
 				var d: float = (v.freq * (h + 1) - wah_center) / 700.0
 				weights.append(cur_harm[h] * (0.1 + 0.9 * exp(-d * d)))
+		var low_boost: float = clampf(1.0 - (v.freq - 33.0) / 200.0, 0.0, 1.0)
+		if low_boost > 0.0 and not cur_harm.is_empty():
+			weights = weights.duplicate()
+			var top: int = mini(int(600.0 / maxf(v.freq, 1.0)), 18)
+			while weights.size() < top:
+				weights.append(0.0)
+			var before: float = 0.0
+			for w in weights:
+				before += w
+			var after: float = 0.0
+			for h in weights.size():
+				var hz: float = v.freq * (h + 1)
+				if hz >= 150.0 and hz <= 600.0:
+					weights[h] = maxf(weights[h], 0.6 * low_boost)
+				after += weights[h]
+			if before > 0.0:
+				norm = cur_norm * sqrt(after / before)
 		var noisy := cur_wave == "noise"
 		for i in frames:
 			v.amp = move_toward(v.amp, target, step)
@@ -315,7 +333,7 @@ func _process(delta: float) -> void:
 						s = 0.0
 						for h in weights.size():
 							s += weights[h] * sin(TAU * v.phase * (h + 1))
-						s *= cur_gain / cur_norm
+						s *= cur_gain / norm
 			s *= v.amp * trem_mul
 			v.pb.push_frame(Vector2(s, s))
 			var f: float = v.freq * mult * (1.0 + vib * sin(TAU * v.lfo))
