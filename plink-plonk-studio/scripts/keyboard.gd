@@ -401,3 +401,35 @@ func set_pedal(on: bool) -> void:
 			if v.pedal:
 				v.pedal = false
 				v.held = false
+				
+func script_on(note: int) -> void:
+	if instrument == "Sample":
+		return
+	var chosen: Voice = voices[0]
+	for v in voices:
+		if not v.held and v.amp < 0.01:
+			chosen = v
+			break
+	chosen.freq = 440.0 * pow(2.0, (note - 69) / 12.0 + cur_octave)
+	chosen.held = true
+	chosen.pedal = false
+	chosen.age = 0.0
+	chosen.lfsr = 1
+	chosen.lfo = 0.0
+	chosen.scoop = cur_scoop
+	chosen.key = 1000 + note
+
+func script_off(note: int) -> void:
+	for v in voices:
+		if v.held and v.key == 1000 + note:
+			v.held = false
+			return
+
+func script_off_all() -> void:
+	for v in voices:
+		if v.key >= 1000:
+			v.held = false
+
+func set_level(l: float) -> void:
+	for v in voices:
+		v.player.volume_db = linear_to_db(maxf(l, 0.0001))

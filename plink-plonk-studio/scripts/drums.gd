@@ -3,28 +3,57 @@ extends Control
 signal kit_changed
 
 const RATE := 22050
-const KIT_NAMES := ["Standard", "Bongos", "Electro"]
+const KIT_NAMES := ["Standard", "Bongos", "Electro", "Rock", "Disco", "Soul", "Psych"]
 const KITS := {
 	"Standard": ["Kick", "Snare", "Hat", "Open Hat", "Tom", "Clap", "Click", "Crash"],
 	"Bongos": ["Bongo Hi", "Bongo Lo", "Conga Hi", "Conga Lo", "Slap", "Cowbell", "Shaker", "Woodblock"],
 	"Electro": ["808 Kick", "Snare", "Clap", "Hat", "808 Tom", "Cowbell", "Click", "Crash"],
+	"Rock": ["Rock Kick", "Rock Snare", "Hat", "Open Hat", "Rock Tom", "Floor Tom", "Crash", "Ride"],
+	"Disco": ["Disco Kick", "Disco Snare", "Hat", "Open Hat", "Clap", "Cowbell", "Tambourine", "Crash"],
+	"Soul": ["Soft Kick", "Rim Click", "Brush", "Conga Hi", "Conga Lo", "Shaker", "Tambourine", "Snap"],
+	"Psych": ["Echo Snare", "Psych Kick", "Rev Cymbal", "Bongo Hi", "Bongo Lo", "Finger Cymbal", "Woodblock", "Floor Tom"],
 }
 # tonal drums: [base Hz, pitch sweep Hz, sweep speed, volume decay]
 const TONAL := {
-	"Kick": [40.0, 110.0, 25.0, 9.0],
-	"Tom": [90.0, 80.0, 12.0, 8.0],
-	"808 Kick": [45.0, 150.0, 18.0, 4.0],
-	"808 Tom": [110.0, 100.0, 10.0, 5.0],
+	"Kick": [55.0, 150.0, 30.0, 8.0],
+	"Tom": [110.0, 80.0, 12.0, 8.0],
+	"808 Kick": [55.0, 170.0, 20.0, 4.0],
+	"808 Tom": [120.0, 100.0, 10.0, 5.0],
 	"Bongo Hi": [330.0, 120.0, 40.0, 14.0],
 	"Bongo Lo": [240.0, 90.0, 40.0, 12.0],
 	"Conga Hi": [260.0, 60.0, 30.0, 9.0],
 	"Conga Lo": [180.0, 50.0, 30.0, 8.0],
+	"Rock Kick": [58.0, 160.0, 28.0, 7.0],
+	"Rock Tom": [140.0, 70.0, 10.0, 6.0],
+	"Floor Tom": [95.0, 55.0, 8.0, 5.0],
+	"Disco Kick": [62.0, 130.0, 35.0, 11.0],
+	"Soft Kick": [65.0, 80.0, 22.0, 9.0],
+	"Psych Kick": [55.0, 220.0, 15.0, 5.0],
+}
+# kicks get a beater click + soft clipping so they're audible on tablet speakers
+const DRIVE := {"Kick": 2.5, "808 Kick": 2.0, "Rock Kick": 2.5, "Disco Kick": 2.2, "Psych Kick": 2.0, "Soft Kick": 1.2}
+# noisy drums: [noise decay, highpass 0-1, attack secs, tone Hz, tone mix, tone decay]
+const NOISY := {
+	"Rock Snare": [14.0, 0.3, 0.0, 185.0, 0.7, 25.0],
+	"Disco Snare": [24.0, 0.5, 0.0, 230.0, 0.5, 40.0],
+	"Rim Click": [90.0, 0.8, 0.0, 1700.0, 0.8, 110.0],
+	"Brush": [9.0, 0.6, 0.04, 0.0, 0.0, 1.0],
+	"Snap": [60.0, 0.9, 0.0, 1900.0, 0.4, 90.0],
+}
+# metallic drums: [partial Hz list, decay, noise mix]
+const METAL := {
+	"Ride": [[3100.0, 4350.0, 5300.0, 6900.0], 3.0, 0.25],
+	"Finger Cymbal": [[3300.0, 4400.0, 6100.0], 5.0, 0.0],
 }
 const DURS := {
 	"Hat": 0.08, "Click": 0.05, "Clap": 0.2, "Crash": 1.0, "Open Hat": 0.35,
 	"808 Kick": 0.6, "808 Tom": 0.5, "Slap": 0.12, "Shaker": 0.15,
 	"Woodblock": 0.1, "Bongo Hi": 0.2, "Bongo Lo": 0.25,
 	"Conga Hi": 0.35, "Conga Lo": 0.35,
+	"Rock Kick": 0.4, "Rock Tom": 0.45, "Floor Tom": 0.6, "Disco Kick": 0.25,
+	"Soft Kick": 0.3, "Psych Kick": 0.6, "Rock Snare": 0.35, "Disco Snare": 0.2,
+	"Rim Click": 0.06, "Brush": 0.3, "Tambourine": 0.3, "Snap": 0.1,
+	"Echo Snare": 0.9, "Rev Cymbal": 0.8, "Finger Cymbal": 0.9, "Ride": 1.2,
 }
 
 var colors := {"white": Color(0.9, 0.9, 0.95), "black": Color.BLACK, "pressed": Color(1.0, 0.6, 0.2), "border": Color.DIM_GRAY}
@@ -94,6 +123,29 @@ func make_sound(kind: String) -> AudioStreamWAV:
 			var p: Array = TONAL[kind]
 			phase += (p[0] + p[1] * exp(-t * p[2])) / RATE
 			s = sin(TAU * phase) * exp(-t * p[3])
+			if DRIVE.has(kind):
+				var click: float = (randf() * 2.0 - 1.0) * exp(-t * 500.0) * 0.35
+				s = tanh((s + click) * float(DRIVE[kind]))
+		elif NOISY.has(kind):
+			var q: Array = NOISY[kind]
+			var raw := randf() * 2.0 - 1.0
+			var shaped: float = raw - prev * float(q[1])
+			prev = raw
+			var att := 1.0
+			if float(q[2]) > 0.0:
+				att = clampf(t / float(q[2]), 0.0, 1.0)
+			phase += float(q[3]) / RATE
+			s = shaped * 0.6 * exp(-t * float(q[0])) * att + sin(TAU * phase) * float(q[4]) * exp(-t * float(q[5]))
+		elif METAL.has(kind):
+			var m: Array = METAL[kind]
+			var parts: Array = m[0]
+			var sum := 0.0
+			for f in parts:
+				sum += sin(TAU * float(f) * t)
+			var raw2 := randf() * 2.0 - 1.0
+			var hp: float = raw2 - prev
+			prev = raw2
+			s = (sum / parts.size()) * 0.8 * exp(-t * float(m[1])) + hp * 0.3 * float(m[2]) * exp(-t * float(m[1]))
 		else:
 			match kind:
 				"Snare":
@@ -126,6 +178,21 @@ func make_sound(kind: String) -> AudioStreamWAV:
 				"Woodblock":
 					phase += 1100.0 / RATE
 					s = sin(TAU * phase) * exp(-t * 45.0)
+				"Echo Snare":
+					var e := 0.0
+					for k in 3:
+						var tt := t - k * 0.18
+						if tt >= 0.0:
+							e += (randf() * 2.0 - 1.0) * exp(-tt * 22.0) * pow(0.5, k)
+					s = e * 0.6
+				"Rev Cymbal":
+					var rn := randf() * 2.0 - 1.0
+					s = (rn - prev) * 0.5 * pow(t / dur, 2.5) * clampf((dur - t) * 40.0, 0.0, 1.0)
+					prev = rn
+				"Tambourine":
+					var tn := randf() * 2.0 - 1.0
+					s = (tn - prev) * 0.5 * exp(-t * 10.0) * (0.35 + 0.65 * exp(-fmod(t, 0.045) * 70.0))
+					prev = tn
 		data.encode_s16(i * 2, int(clampf(s, -1.0, 1.0) * 30000.0))
 	var w := AudioStreamWAV.new()
 	w.format = AudioStreamWAV.FORMAT_16_BITS

@@ -7,9 +7,11 @@ const THEREMIN := preload("res://scripts/theremin.gd")
 const TOP_BAR := 120.0
 const SING := preload("res://scripts/sing.gd")
 const SEQ := preload("res://scripts/sequencer.gd")
+const PLONK := preload("res://scripts/plonk.gd")
+var plonk
 var sequencer
 
-const AREAS := ["Piano", "Drums", "Piano + Drums", "mixer", "Theremin", "sing", "record", "Sequencer"]
+const AREAS := ["Piano", "Drums", "Piano + Drums", "mixer", "Theremin", "sing", "record", "Sequencer", "PlonkScript"]
 const SOUNDS := ["Square", "Piano", "Organ", "E-Piano", "Harpsichord", "Xylophone", "Glass Harmonica", "Guitar", "Bass", "Sample", "Saw", "Chip Saw", "Pulse 12", "Pulse 25", "Triangle", "8-Bit Noise", "8-Bit Metal", "VRC6 Saw" , "Curtis Wah", "Curtis Clean"]
 
 const AUTO_BEATS := [1.0, 0.5, 2.0]
@@ -120,6 +122,13 @@ func _ready() -> void:
 	recorder.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	recorder.sound_ready.connect(on_sound_ready)
 	vbox.add_child(recorder)
+	
+	plonk = PLONK.new()
+	plonk.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	plonk.kbs = kbs
+	plonk.drums = drums
+	plonk.theremin = theremin
+	vbox.add_child(plonk)
 
 	build_top_bar()
 	set_area(0)
@@ -232,11 +241,11 @@ func apply_theme() -> void:
 	var p := view_menu.get_popup()
 	for i in THEMES.size():
 		p.set_item_text(i, ("● " if i == theme_index else "    ") + THEMES[i].name)
-	for c in kbs + [drums, mixer, theremin, sing, recorder, sequencer]:
+	for c in kbs + [drums, mixer, theremin, sing, recorder, sequencer, plonk]:
 		c.colors = t
 		c.queue_redraw()
 	var th := make_theme(t)
-	for c in [mixer, sing, recorder, sequencer]:
+	for c in [mixer, sing, recorder, sequencer, plonk]:
 		c.theme = th
 	if top_row and bar_bg:
 		style_bar()
@@ -294,6 +303,7 @@ func save_project(path: String) -> void:
 		"octaves": [kbs[0].start_note, kbs[1].start_note],
 		"sing": sing.get_settings(),
 		"seq": sequencer.get_state(),
+		"plonk": plonk.editor.text,
 	})
 	f.close()
 
@@ -345,6 +355,7 @@ func load_project(path: String) -> void:
 		kbs[i].start_note = clampi(int(octs[i]), 24, 84)
 		kbs[i].update_label()
 	sing.set_settings(d.get("sing", {}))
+	plonk.editor.text = d.get("plonk", "")
 
 	var tw := unpack_wav(d.get("theremin", {}))
 	if tw:
@@ -386,6 +397,7 @@ func set_area(i: int) -> void:
 		area_btn.select(i)
 	sing.visible = (i == 5)
 	sequencer.visible = (i == 7)
+	plonk.visible = (i == 8)
 	var on_drums := (i == 1 or i == 2)
 	if swap_btn:
 		swap_btn.visible = on_drums
