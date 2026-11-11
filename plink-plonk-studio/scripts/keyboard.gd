@@ -1,5 +1,8 @@
 extends Control
 
+signal note_down(note)
+signal note_up(note)
+
 @export var side_on_right := false
 
 const RATE := 22050.0
@@ -89,6 +92,7 @@ class Voice:
 	var scoop := 0.0
 	var lfsr := 1
 	var noise_out := 1.0
+	var vel := 1.0
 	
 
 var keys := []
@@ -223,6 +227,7 @@ func _input(event: InputEvent) -> void:
 
 func press(index: int, k: int) -> void:
 	var note: int = start_note + keys[k].offset
+	note_down.emit(note)
 	if instrument == "Sample" and sample:
 		var p: AudioStreamPlayer = sample_players[sample_next]
 		sample_next = (sample_next + 1) % sample_players.size()
@@ -248,6 +253,7 @@ func press(index: int, k: int) -> void:
 	chosen.lfsr = 1
 	chosen.lfo = 0.0
 	chosen.scoop = cur_scoop
+	chosen.vel = 1.0
 	chosen.key = k
 	touches[index] = k
 	queue_redraw()
@@ -256,6 +262,7 @@ func release(index: int) -> void:
 	if not touches.has(index):
 		return
 	var k: int = touches[index]
+	note_up.emit(start_note + keys[k].offset)
 	for v in voices:
 		if v.held and not v.pedal and v.key == k:
 			if sustain_on:
@@ -283,7 +290,7 @@ func _process(delta: float) -> void:
 		var target := 0.0
 		var step := cur_release
 		if v.held:
-			target = 0.2 * (cur_sustain + (1.0 - cur_sustain) * exp(-v.age * cur_decay))
+			target = 0.2 * v.vel * (cur_sustain + (1.0 - cur_sustain) * exp(-v.age * cur_decay))
 			step = cur_attack
 			v.age += frames / RATE
 		v.scoop = move_toward(v.scoop, 0.0, cur_scoop_rate * frames / RATE)
@@ -402,7 +409,7 @@ func set_pedal(on: bool) -> void:
 				v.pedal = false
 				v.held = false
 				
-func script_on(note: int) -> void:
+func script_on(note: int, vel: float = 1.0) -> void:
 	if instrument == "Sample":
 		return
 	var chosen: Voice = voices[0]
@@ -417,6 +424,7 @@ func script_on(note: int) -> void:
 	chosen.lfsr = 1
 	chosen.lfo = 0.0
 	chosen.scoop = cur_scoop
+	chosen.vel = vel
 	chosen.key = 1000 + note
 
 func script_off(note: int) -> void:
@@ -433,3 +441,10 @@ func script_off_all() -> void:
 func set_level(l: float) -> void:
 	for v in voices:
 		v.player.volume_db = linear_to_db(maxf(l, 0.0001))
+		
+		
+func set_bus(bn: String) -> void:
+	for v in voices:
+		v.player.bus = bn
+	for p in sample_players:
+		p.bus = bn

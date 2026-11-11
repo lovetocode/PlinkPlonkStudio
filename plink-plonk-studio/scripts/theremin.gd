@@ -163,3 +163,8 @@ func set_sample(wav: AudioStreamWAV) -> void:
 	sample_player.stream = w
 	sample_player.play()
 	use_sample = true
+	
+func set_bus(bn: String) -> void:
+	player.bus = bn
+	if sample_player:
+		sample_player.bus = bn

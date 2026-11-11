@@ -1,5 +1,13 @@
 extends Control
 
+const EXPORTER := preload("res://scripts/exporter.gd")
+var exporter
+var ff_fd: FileDialog
+var mp4_fd: FileDialog
+var mp4_mode := ""
+var pending_mp4 := ""
+var key_recording := false
+
 const KEYBOARD := preload("res://scripts/keyboard.gd")
 const DRUMS := preload("res://scripts/drums.gd")
 const MIXER := preload("res://scripts/mixer.gd")
@@ -76,6 +84,9 @@ var kbs := []
 
 func _ready() -> void:
 	setup_audio()
+	exporter = EXPORTER.new()
+	add_child(exporter)
+	exporter.finished.connect(on_mp4_done)
 	vbox = VBoxContainer.new()
 	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vbox.offset_top = TOP_BAR
@@ -95,6 +106,7 @@ func _ready() -> void:
 	vbox.add_child(drums)
 
 	mixer = MIXER.new()
+	mixer.exported.connect(on_mixer_exported)
 	mixer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(mixer)
 	
@@ -124,6 +136,11 @@ func _ready() -> void:
 	vbox.add_child(recorder)
 	
 	plonk = PLONK.new()
+	plonk.exporter = exporter
+	plonk.mixer = mixer
+	for kb in kbs:
+		kb.note_down.connect(plonk.on_key_down)
+		kb.note_up.connect(plonk.on_key_up)
 	plonk.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	plonk.kbs = kbs
 	plonk.drums = drums
@@ -151,7 +168,8 @@ func build_top_bar() -> void:
 	top_row.add_theme_constant_override("separation", 8)
 
 	# 1. File menu (far left)
-	file_menu = add_menu("File", 100, ["Load WAV", "Save take", "Send take to mixer", "Save project", "Load project", "Backing: use last take", "Backing: load WAV", "Backing: play/stop", "Quit"], on_file_item)
+	file_menu = add_menu("File", 100, ["Load WAV", "Save take", "Send take to mixer", "Save project", "Load project", "Backing: use last take", "Backing: load WAV", "Backing: play/stop", "MP4 style: " + exporter.STYLES[exporter.style], "MP4: set FFmpeg folder", "MP4: take to video", "MP4: mixer to video", "Quit"], on_file_item)
+	file_menu.get_popup().add_item("Keys to script: start", 13)
 	# 2. Area
 	area_btn = add_dropdown(AREAS, 140, set_area)
 	# 3. Instrument sound
@@ -269,7 +287,25 @@ func on_file_item(id: int) -> void:
 	elif id == 7:
 		toggle_backing()
 	elif id == 8:
+		exporter.style = (exporter.style + 1) % exporter.STYLES.size()
+		exporter.save_settings()
+		file_menu.get_popup().set_item_text(8, "MP4 style: " + exporter.STYLES[exporter.style])
+	elif id == 9:
+		ff_fd.popup_centered_ratio(0.8)
+	elif id == 10:
+		if last_take:
+			mp4_mode = "take"
+			mp4_fd.current_file = "take.mp4"
+			mp4_fd.popup_centered_ratio(0.8)
+	elif id == 11:
+		if not mixer.tracks.is_empty():
+			mp4_mode = "mixer"
+			mp4_fd.current_file = "mix.mp4"
+			mp4_fd.popup_centered_ratio(0.8)
+	elif id == 12:
 		get_tree().quit()
+	elif id == 13:
+		toggle_key_record()
 	
 
 func save_project(path: String) -> void:
@@ -480,6 +516,21 @@ func setup_audio() -> void:
 	proj_open_fd.filters = PackedStringArray(["*.ppp ; Plink Plonk project"])
 	proj_open_fd.file_selected.connect(load_project)
 	add_child(proj_open_fd)
+	
+	ff_fd = FileDialog.new()
+	ff_fd.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	ff_fd.access = FileDialog.ACCESS_FILESYSTEM
+	ff_fd.use_native_dialog = true
+	ff_fd.dir_selected.connect(func(d): exporter.set_dir(d))
+	add_child(ff_fd)
+
+	mp4_fd = FileDialog.new()
+	mp4_fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	mp4_fd.access = FileDialog.ACCESS_FILESYSTEM
+	mp4_fd.use_native_dialog = true
+	mp4_fd.filters = PackedStringArray(["*.mp4 ; MP4 video"])
+	mp4_fd.file_selected.connect(on_mp4_path)
+	add_child(mp4_fd)
 
 func swap_hands() -> void:
 	vbox.move_child(vbox.get_child(1), 0)
@@ -736,3 +787,42 @@ func on_seq_render(list: Array) -> void:
 	for e in list:
 		mixer.add_track(e.name, e.wav)
 	set_area(3)
+
+func on_mp4_path(path: String) -> void:
+	if not path.to_lower().ends_with(".mp4"):
+		path += ".mp4"
+	var wav_path := path.get_basename() + ".wav"
+	if mp4_mode == "take" and last_take:
+		if last_take.save_to_wav(wav_path) != OK:
+			OS.alert("Couldn't save " + wav_path, "MP4 export")
+			return
+		exporter.make_mp4(wav_path, path)
+	elif mp4_mode == "mixer":
+		pending_mp4 = path
+		mixer.export_wav(wav_path)
+
+func on_mixer_exported(wav_path: String) -> void:
+	if pending_mp4 != "":
+		exporter.make_mp4(wav_path, pending_mp4)
+		pending_mp4 = ""
+
+func on_mp4_done(msg: String) -> void:
+	OS.alert(msg, "Plink Plonk")
+	if plonk:
+		plonk.show_status(msg)
+		
+func toggle_key_record() -> void:
+	var pm := file_menu.get_popup()
+	var idx := pm.get_item_index(13)
+	if not key_recording:
+		key_recording = true
+		plonk.rec_begin()
+		set_area(0)
+		file_menu.text = "REC ●"
+		pm.set_item_text(idx, "Keys to script: STOP")
+	else:
+		key_recording = false
+		plonk.rec_end(bpm)
+		file_menu.text = "File"
+		pm.set_item_text(idx, "Keys to script: start")
+		set_area(8)

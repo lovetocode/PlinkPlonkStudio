@@ -1,4 +1,5 @@
 extends Control
+signal exported(path)
 
 const FX_NAMES := ["Reverb", "Delay", "Distortion", "Low-pass", "High-pass", "Chorus"]
 
@@ -318,6 +319,8 @@ func finish_export() -> void:
 	exporting = false
 	if rec:
 		rec.save_to_wav(export_path)
+		exported.emit(export_path)
+		
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), colors.border)
 	if tracks.is_empty():
