@@ -562,11 +562,17 @@ func read_lines(src: String, level: int, file: String, outer_no: int, base: int)
 	for raw in src.split("\n"):
 		n += 1
 		var s: String = raw.replace("\t", "    ")
-		var cm := s.find("#")
+		var cm := -1
+		var in_q := false
+		for k in s.length():
+			var ch := s.substr(k, 1)
+			if ch == "\"":
+				in_q = not in_q
+			elif ch == "#" and not in_q:
+				cm = k
+				break
 		if cm >= 0:
-			var q := s.find("\"")
-			if q < 0 or q > cm:
-				s = s.substr(0, cm)
+			s = s.substr(0, cm)
 		if s.strip_edges() == "":
 			continue
 		var ind := s.length() - s.lstrip(" ").length() + base
@@ -1088,6 +1094,8 @@ func exec_line(L: Dictionary, a: int, b: int) -> void:
 			else:
 				fail(L, "I don't know '%s'. Tap Help for the command list." % w[0])
 func emit_drum(real: String, t: float, v: float) -> void:
+	if not real.begins_with("@"):
+		drums.get_sound(real)
 	var on := sw(t)
 	var vv := v
 	if humanize > 0.0:
@@ -1416,6 +1424,11 @@ func play_src(src: String, from_repl: bool, start_bar: int = 1) -> void:
 	if not compile(src):
 		show_error(from_repl)
 		return
+	for tn in synths.keys():
+		if not tracks.has(tn):
+			synths[tn].queue_free()
+			synths.erase(tn)
+			synth_kinds.erase(tn)
 	if events.is_empty():
 		show_status("Nothing to play yet.")
 		return
