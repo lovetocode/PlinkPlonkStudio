@@ -136,6 +136,7 @@ func _ready() -> void:
 	vbox.add_child(recorder)
 	
 	plonk = PLONK.new()
+	plonk.rendered.connect(on_plonk_rendered)
 	plonk.exporter = exporter
 	plonk.mixer = mixer
 	for kb in kbs:
@@ -170,6 +171,7 @@ func build_top_bar() -> void:
 	# 1. File menu (far left)
 	file_menu = add_menu("File", 100, ["Load WAV", "Save take", "Send take to mixer", "Save project", "Load project", "Backing: use last take", "Backing: load WAV", "Backing: play/stop", "MP4 style: " + exporter.STYLES[exporter.style], "MP4: set FFmpeg folder", "MP4: take to video", "MP4: mixer to video", "Quit"], on_file_item)
 	file_menu.get_popup().add_item("Keys to script: start", 13)
+	file_menu.get_popup().add_item("Send take to sequencer", 14)
 	# 2. Area
 	area_btn = add_dropdown(AREAS, 140, set_area)
 	# 3. Instrument sound
@@ -276,7 +278,7 @@ func on_file_item(id: int) -> void:
 	elif id == 2:
 		send_take()
 	elif id == 3:
-		proj_save_fd.current_file = "project.ppp"
+		proj_save_fd.current_file = "project.pps"
 		proj_save_fd.popup_centered_ratio(0.8)
 	elif id == 4:
 		proj_open_fd.popup_centered_ratio(0.8)
@@ -306,10 +308,15 @@ func on_file_item(id: int) -> void:
 		get_tree().quit()
 	elif id == 13:
 		toggle_key_record()
+	elif id == 14:
+		if last_take:
+			take_count += 1
+			sequencer.put_sound("Take " + str(take_count), last_take)
+			set_area(7)
 	
 
 func save_project(path: String) -> void:
-	var f := FileAccess.open(path, FileAccess.WRITE)
+	var f := FileAccess.open_compressed(path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 	if f == null:
 		push_error("Couldn't save to " + path)
 		return
@@ -344,7 +351,9 @@ func save_project(path: String) -> void:
 	f.close()
 
 func load_project(path: String) -> void:
-	var f := FileAccess.open(path, FileAccess.READ)
+	var f := FileAccess.open_compressed(path, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+	if f == null:
+		f = FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		push_error("Couldn't open " + path)
 		return
@@ -505,7 +514,7 @@ func setup_audio() -> void:
 	proj_save_fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 	proj_save_fd.access = FileDialog.ACCESS_FILESYSTEM
 	proj_save_fd.use_native_dialog = true
-	proj_save_fd.filters = PackedStringArray(["*.ppp ; Plink Plonk project"])
+	proj_save_fd.filters = PackedStringArray(["*.pps ; Plink Plonk Studio project"])
 	proj_save_fd.file_selected.connect(save_project)
 	add_child(proj_save_fd)
 	
@@ -513,7 +522,7 @@ func setup_audio() -> void:
 	proj_open_fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	proj_open_fd.access = FileDialog.ACCESS_FILESYSTEM
 	proj_open_fd.use_native_dialog = true
-	proj_open_fd.filters = PackedStringArray(["*.ppp ; Plink Plonk project"])
+	proj_open_fd.filters = PackedStringArray(["*.pps, *.ppp ; Plink Plonk Studio project"])
 	proj_open_fd.file_selected.connect(load_project)
 	add_child(proj_open_fd)
 	
@@ -666,6 +675,10 @@ func on_sound_ready(wav: AudioStreamWAV, target: String) -> void:
 		drums.set_pad_sound(int(target.get_slice(" ", 2)) - 1, wav)
 	elif target == "Theremin":
 		theremin.set_sample(wav)
+	elif target == "Sequencer lane":
+		take_count += 1
+		sequencer.put_sound("Sound " + str(take_count), wav)
+		set_area(7)
 	else:
 		take_count += 1
 		mixer.add_track("Sound " + str(take_count), wav)
@@ -826,3 +839,12 @@ func toggle_key_record() -> void:
 		file_menu.text = "File"
 		pm.set_item_text(idx, "Keys to script: start")
 		set_area(8)
+		
+func on_plonk_rendered(wav: AudioStreamWAV, target: String) -> void:
+	take_count += 1
+	if target == "seq":
+		sequencer.put_sound("Song " + str(take_count), wav)
+		set_area(7)
+	else:
+		mixer.add_track("Song " + str(take_count), wav)
+		set_area(3)

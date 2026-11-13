@@ -63,6 +63,7 @@ var cur_trem_rate := 5.0
 var wah_phase := 0.0
 var wah_center := 1000.0
 var trem_phase := 0.0
+var level := 1.0
 
 var sample: AudioStreamWAV = null
 var root_note := 60                 # pitch the WAV was recorded at (C4)
@@ -408,9 +409,33 @@ func set_pedal(on: bool) -> void:
 			if v.pedal:
 				v.pedal = false
 				v.held = false
-				
+
+func script_off(note: int) -> void:
+	for v in voices:
+		if v.held and v.key == 1000 + note:
+			if sustain_on:
+				v.pedal = true
+			else:
+				v.held = false
+			return
+
+func script_off_all() -> void:
+	sustain_on = false
+	for v in voices:
+		if v.key >= 1000:
+			v.held = false
+			v.pedal = false
+
 func script_on(note: int, vel: float = 1.0) -> void:
 	if instrument == "Sample":
+		if sample == null:
+			return
+		var p: AudioStreamPlayer = sample_players[sample_next]
+		sample_next = (sample_next + 1) % sample_players.size()
+		p.stream = sample
+		p.pitch_scale = pow(2.0, (note - root_note) / 12.0)
+		p.volume_db = linear_to_db(maxf(vel * level, 0.0001))
+		p.play()
 		return
 	var chosen: Voice = voices[0]
 	for v in voices:
@@ -427,18 +452,8 @@ func script_on(note: int, vel: float = 1.0) -> void:
 	chosen.vel = vel
 	chosen.key = 1000 + note
 
-func script_off(note: int) -> void:
-	for v in voices:
-		if v.held and v.key == 1000 + note:
-			v.held = false
-			return
-
-func script_off_all() -> void:
-	for v in voices:
-		if v.key >= 1000:
-			v.held = false
-
 func set_level(l: float) -> void:
+	level = l
 	for v in voices:
 		v.player.volume_db = linear_to_db(maxf(l, 0.0001))
 		

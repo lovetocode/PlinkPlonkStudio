@@ -3,7 +3,7 @@ extends Control
 signal sound_ready(wav, target)
 
 const TARGETS := ["Keyboard", "Drum pad 1", "Drum pad 2", "Drum pad 3", "Drum pad 4",
-	"Drum pad 5", "Drum pad 6", "Drum pad 7", "Drum pad 8", "Theremin", "Mixer track"]
+	"Drum pad 5", "Drum pad 6", "Drum pad 7", "Drum pad 8", "Theremin", "Mixer track", "Sequencer lane"]
 
 var colors := {}:
 	set(v):

@@ -158,6 +158,7 @@ func set_sample(wav: AudioStreamWAV) -> void:
 	w.loop_end = w.data.size() / (4 if w.stereo else 2)
 	if sample_player == null:
 		sample_player = AudioStreamPlayer.new()
+		sample_player.bus = player.bus
 		sample_player.bus = "Rec"
 		add_child(sample_player)
 	sample_player.stream = w

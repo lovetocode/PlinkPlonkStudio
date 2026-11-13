@@ -1,5 +1,8 @@
 extends Control
 
+signal rendered(wav, target)
+var render_target := ""
+
 const KEYBOARD := preload("res://scripts/keyboard.gd")
 const DRUMS := preload("res://scripts/drums.gd")
 const THEREMIN := preload("res://scripts/theremin.gd")
@@ -29,7 +32,7 @@ const BLOCKS := ["bar", "measure", "loop", "track", "pattern", "every", "except"
 const BOTH := ["transpose"]
 const NOSUB := ["let", "pattern", "track", "play", "loop", "include"]
 const KINDS := ["keys", "drums", "theremin", "lyrics"]
-const STATE_EVENTS := ["kb_inst", "th_voice", "vol", "tempo", "th_vib", "fx"]
+const STATE_EVENTS := ["kb_inst", "th_voice", "vol", "tempo", "th_vib", "fx", "kb_pedal", "master","kb_sample","th_sample" ]
 const FX_SLOT := {"reverb": 1, "delay": 2, "distortion": 3, "lowpass": 4, "highpass": 5, "chorus": 6}
 const FX_DEFAULT := {"reverb": 0.4, "delay": 0.5, "distortion": 0.4, "lowpass": 1200.0, "highpass": 800.0, "chorus": 1.0, "pan": 0.0}
 const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -40,7 +43,7 @@ const TPQ := 480
 const TAIL_SEC := 1.5
 const KEYWORDS := ["tempo", "meter", "track", "pattern", "play", "loop", "every", "except", "bar", "measure",
 	"rest", "volume", "velocity", "vel", "instrument", "octave", "note", "chord", "arp", "progression", "deg",
-	"key", "let", "include", "swing", "humanize", "transpose", "kit", "voice", "glide", "vibrato", "say", "as", "to", "sample", "pitch", "reverb", "delay", "distortion", "lowpass", "highpass", "chorus", "pan"] 
+	"key", "let", "include", "swing", "humanize", "transpose", "kit", "voice", "glide", "vibrato", "say", "as", "to", "sample", "pitch", "reverb", "delay", "distortion", "lowpass", "highpass", "chorus", "pan", "sustain",  "master"]
 const GM_DRUMS := {
 	"Kick": 36, "808 Kick": 36, "Rock Kick": 36, "Disco Kick": 36, "Soft Kick": 36, "Psych Kick": 36,
 	"Snare": 38, "Rock Snare": 38, "Disco Snare": 38, "Echo Snare": 38, "Rim Click": 37, "Snap": 37,
@@ -81,6 +84,7 @@ velocity 80          default note loudness for the track (0 to 100)
 transpose 2          shift pitch in semitones (also: transpose 2:  with a block)
 tempo 140            inside a track: change tempo from here
 tempo 100 to 140 8   inside a track: ramp the tempo over 8 beats
+instrument sample take_1   use a sound as the instrument (C4 = original pitch)
 
 KEYS AND THEREMIN
 instrument glass_harmonica   piano e_piano organ harpsichord xylophone
@@ -101,6 +105,8 @@ THEREMIN
 voice spooky         classic pure buzzy hollow voice spooky
 glide A4 to E5 2     slide between pitches
 vibrato 0.5          0 to 1
+
+voice sample take_1  use a sound as the theremin (loops, glides, C4 = original pitch)
 
 DRUMS (inside a measure)
 kit disco            standard bongos electro rock disco soul psych
@@ -138,6 +144,9 @@ REPL (box at the bottom)
 Pick keys, drums or theremin, type commands separated by ;  then Enter:
   instrument organ; note C4 1; note E4 1; note G4 2
 Keep copies what you just played into the editor.
+
+sustain on           (keys) hold the pedal down; sustain off lets go
+master 80            overall volume (0 to 150), top of song or mid-song
 """
 
 const EXAMPLE := """tempo 100
@@ -314,6 +323,8 @@ func _ready() -> void:
 	add_btn(bar, "WAV", 80, func(): pick_export("wav"))
 	add_btn(bar, "MP4", 80, func(): pick_export("mp4"))
 	add_btn(bar, "MIDI", 90, func(): pick_export("mid"))
+	add_btn(bar, "To mixer", 110, func(): render_to("mixer"))
+	add_btn(bar, "To seq", 90, func(): render_to("seq"))
 
 	editor = CodeEdit.new()
 	editor.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -323,6 +334,8 @@ func _ready() -> void:
 	editor.indent_automatic = true
 	editor.indent_use_spaces = true
 	editor.indent_size = 4
+	editor.code_completion_enabled = true
+	editor.code_completion_requested.connect(on_complete)
 	editor.add_theme_color_override("line_number_color", Color(0.65, 0.65, 0.7))
 	editor.text_changed.connect(clear_marks)
 	var hl := CodeHighlighter.new()
@@ -791,6 +804,17 @@ func exec_line(L: Dictionary, a: int, b: int) -> void:
 			if vars.has(val):
 				val = vars[val]
 			vars[w[1]] = val
+		"sustain":
+			if not need(L, ["keys"]):
+				return
+			var pedal_on := w.size() < 2 or w[1].to_lower() != "off"
+			add_ev(cur.cursor, "kb_pedal", {"trk": cur.name, "on": pedal_on})
+		"master":
+			var mv := num(L, w, 1, 100.0)
+			if err != "":
+				return
+			var mb: float = cur.cursor if not cur.is_empty() else 0.0
+			add_ev(mb, "master", {"value": clampf(mv, 0.0, 150.0)})
 		"tempo":
 			if w.size() < 2:
 				fail(L, "tempo looks like: tempo 120")
@@ -1047,20 +1071,40 @@ func exec_line(L: Dictionary, a: int, b: int) -> void:
 				return
 			var inst := find_inst(w[1]) if w.size() > 1 else ""
 			if inst == "":
-				fail(L, "unknown instrument (try piano, e_piano, organ, glass_harmonica, guitar, bass, chip_saw...)")
+				fail(L, "unknown instrument (try piano, e_piano, organ, glass_harmonica, guitar, bass, chip_saw, sample...)")
 				return
 			if inst == "Sample":
-				fail(L, "Sample can't be used in scripts yet")
+				if w.size() < 3:
+					fail(L, "instrument sample looks like: instrument sample take_1")
+					return
+				var sw_wav := find_sample(w[2])
+				if sw_wav == null:
+					fail(L, "no sample called '%s'. Available: %s" % [w[2], sample_names()])
+					return
+				var skey := "@" + norm(w[2])
+				sample_map[skey] = sw_wav
+				add_ev(cur.cursor, "kb_sample", {"trk": cur.name, "key": skey})
 				return
 			add_ev(cur.cursor, "kb_inst", {"trk": cur.name, "inst": inst})
+				
 		"voice":
 			if not need(L, ["theremin"]):
 				return
+			if w.size() > 2 and w[1].to_lower() == "sample":
+				var tw := find_sample(w[2])
+				if tw == null:
+					fail(L, "no sample called '%s'. Available: %s" % [w[2], sample_names()])
+					return
+				var tkey := "@" + norm(w[2])
+				sample_map[tkey] = tw
+				add_ev(cur.cursor, "th_sample", {"trk": cur.name, "key": tkey})
+				return
 			var vn := find_voice(w[1]) if w.size() > 1 else ""
 			if vn == "":
-				fail(L, "voices: classic pure buzzy hollow voice spooky")
+				fail(L, "voices: classic pure buzzy hollow voice spooky, or: voice sample take_1")
 				return
 			add_ev(cur.cursor, "th_voice", {"trk": cur.name, "voice": vn})
+		
 		"volume":
 			if cur.is_empty():
 				fail(L, "volume goes inside a track:")
@@ -1093,6 +1137,7 @@ func exec_line(L: Dictionary, a: int, b: int) -> void:
 				do_drum(L, w, real)
 			else:
 				fail(L, "I don't know '%s'. Tap Help for the command list." % w[0])
+				
 func emit_drum(real: String, t: float, v: float) -> void:
 	if not real.begins_with("@"):
 		drums.get_sound(real)
@@ -1497,12 +1542,20 @@ func _process(delta: float) -> void:
 
 func fire(e: Dictionary) -> void:
 	match e.type:
+		"kb_pedal":
+			synths[e.trk].set_pedal(e.on)
+		"master":
+			AudioServer.set_bus_volume_db(0, linear_to_db(maxf(e.value / 100.0, 0.0001)))
 		"kb_on":
 			synths[e.trk].script_on(e.note, e.get("vel", 1.0))
 		"kb_off":
 			synths[e.trk].script_off(e.note)
 		"kb_inst":
 			synths[e.trk].set_instrument(e.inst)
+		"kb_sample":
+			var kb = synths[e.trk]
+			kb.sample = sample_map[e.key]
+			kb.set_instrument("Sample")
 		"drum":
 			play_drum(e.name, e.trk, e.get("vel", 1.0), e.get("pitch", 0.0))
 		"fx":
@@ -1528,6 +1581,8 @@ func fire(e: Dictionary) -> void:
 			synths[e.trk].vib_depth = e.depth
 		"th_voice":
 			synths[e.trk].set_voice(e.voice)
+		"th_sample":
+			synths[e.trk].set_sample(sample_map[e.key])
 		"vol":
 			var v: float = e.value / 100.0
 			match e.kind:
@@ -1563,19 +1618,29 @@ func start_export(wav_path: String, mp4_path: String) -> void:
 	export_mp4_path = mp4_path
 	rec_fx.set_recording_active(false)
 	play_src(editor.text, false, 1)
+	if not playing:          # <- new
+		render_target = ""   # <- new
 	if playing:
 		exporting = true
 		rec_fx.set_recording_active(true)
 		show_status("Exporting... the song is recorded live, so wait for it to finish. Stop cancels.")
-
+		
 func finish_export(ok: bool) -> void:
 	exporting = false
 	rec_fx.set_recording_active(false)
 	if not ok:
+		render_target = ""
 		return
 	var wav: AudioStreamWAV = rec_fx.get_recording()
 	if wav == null:
+		render_target = ""
 		show_status("Nothing was recorded.")
+		return
+	if render_target != "":
+		var t := render_target
+		render_target = ""
+		rendered.emit(wav, t)
+		show_status("Sent to " + t + ".")
 		return
 	if wav.save_to_wav(export_wav_path) != OK:
 		show_status("Couldn't save " + export_wav_path)
@@ -1967,5 +2032,80 @@ func rec_end(fallback_bpm: float) -> void:
 	editor.text += out
 	clear_marks()
 	show_status("Wrote %d notes into %d track(s). Tap Run to hear them." % [items.size(), lane_items.size()])
+	
+func render_to(t: String) -> void:
+	render_target = t
+	start_export("", "")
+	
+func slug(s: String) -> String:
+	return s.to_lower().replace(" ", "_").replace("-", "_")
+
+func complete_list(first: String, idx: int) -> Array:
+	var out: Array = []
+	if idx == 0:
+		out.append_array(KEYWORDS)
+		for k in DRUMS.KITS:
+			for n in DRUMS.KITS[k]:
+				out.append(slug(n))
+		return out
+	match first:
+		"instrument":
+			if idx == 1:
+				for n in KEYBOARD.INSTRUMENTS:
+					out.append(slug(n))
+			elif idx == 2:
+				out = sample_choices()
+		"voice":
+			if idx == 1:
+				for n in THEREMIN.VOICES:
+					out.append(n.to_lower())
+				out.append("sample")
+			elif idx == 2:
+				out = sample_choices()
+		"kit":
+			for n in DRUMS.KIT_NAMES:
+				out.append(n.to_lower())
+		"key":
+			if idx == 2:
+				out = SCALES.keys()
+		"chord", "arp":
+			if idx == 2:
+				out = CHORDS.keys()
+			elif first == "arp" and idx == 4:
+				out = ARP_DIRS.duplicate()
+		"sample":
+			if idx == 1:
+				out = sample_choices()
+		"track":
+			if idx == 2:
+				out = KINDS.duplicate()
+	return out
+
+func sample_choices() -> Array:
+	var out: Array = []
+	if mixer != null:
+		for t in mixer.tracks:
+			out.append(norm(str(t.name)))
+	if kbs.size() > 0 and kbs[0].sample != null:
+		out.append("keyboard")
+	if script_dir != "":
+		for f in DirAccess.get_files_at(script_dir):
+			if f.to_lower().ends_with(".wav"):
+				out.append(f.get_basename())
+	return out
+
+func on_complete() -> void:
+	var before: String = editor.get_line(editor.get_caret_line()).substr(0, editor.get_caret_column())
+	var words := before.strip_edges(true, false).split(" ", false)
+	var idx := words.size() if before.ends_with(" ") else maxi(words.size() - 1, 0)
+	var first := "" if words.is_empty() else words[0].to_lower()
+	var seen := {}
+	for s in complete_list(first, idx):
+		var t := str(s)
+		if seen.has(t):
+			continue
+		seen[t] = true
+		editor.add_code_completion_option(CodeEdit.KIND_PLAIN_TEXT, t, t)
+	editor.update_code_completion_options(true)
 	
 	
