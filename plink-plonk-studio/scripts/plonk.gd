@@ -229,6 +229,8 @@ var rec_notes := []
 var rec_open := {}
 var rec_t0 := -1.0
 
+var master_saved := INF
+
 var lines := []
 var events := []
 var say_texts := []
@@ -288,7 +290,7 @@ var last_repl := []
 var last_track := "keys"
 
 func _ready() -> void:
-	for i in 24:
+	for i in 48:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Rec"
 		add_child(p)
@@ -1520,6 +1522,10 @@ func stop_play(cancel_export: bool = true) -> void:
 		lyric_label.text = ""
 	if cancel_export and exporting:
 		finish_export(false)
+		
+	if master_saved != INF:
+		AudioServer.set_bus_volume_db(0, master_saved)
+		master_saved = INF
 
 func _process(delta: float) -> void:
 	if not playing:
@@ -1542,6 +1548,10 @@ func _process(delta: float) -> void:
 
 func fire(e: Dictionary) -> void:
 	match e.type:
+		"master":
+			if master_saved == INF:
+				master_saved = AudioServer.get_bus_volume_db(0)
+				AudioServer.set_bus_volume_db(0, linear_to_db(maxf(e.value / 100.0, 0.0001)))
 		"kb_pedal":
 			synths[e.trk].set_pedal(e.on)
 		"master":

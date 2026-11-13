@@ -6,10 +6,13 @@ signal note_up(note)
 @export var side_on_right := false
 
 const RATE := 22050.0
-const VOICES := 8
+const VOICES := 16
 const WHITE_STEPS := [0, 2, 4, 5, 7, 9, 11]
 const BLACK_AFTER := {0: 1, 1: 3, 3: 6, 4: 8, 5: 10}
 const SIDE := 110.0
+
+const LETTERS := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+var white_shift := 0
 
 # harmonics = relative strength of each overtone (empty = square wave)
 # sustain   = level a held note settles to (1 = never decays)
@@ -121,9 +124,11 @@ func _ready() -> void:
 	side.add_theme_constant_override("separation", 6)
 	add_child(side)
 	make_button("Oct +", 1)
+	make_button("Key +", 1, true)
 	octave_label = Label.new()
 	octave_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	side.add_child(octave_label)
+	make_button("Key -", -1, true)
 	make_button("Oct -", -1)
 	var sus := Button.new()
 	sus.text = "Sus"
@@ -169,22 +174,43 @@ func set_instrument(name: String) -> void:
 		cur_norm += h
 	if cur_norm == 0.0:
 		cur_norm = 1.0
-
-func make_button(text: String, dir: int) -> void:
+		
+func make_button(text: String, dir: int, is_shift := false) -> void:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	b.pressed.connect(change_octave.bind(dir))
+	if is_shift:
+		b.pressed.connect(shift_keys.bind(dir))
+	else:
+		b.pressed.connect(change_octave.bind(dir))
 	side.add_child(b)
+
+
 
 func change_octave(dir: int) -> void:
 	start_note = clampi(start_note + dir * 12, 24, 84)
 	update_label()
+	
+func shift_keys(dir: int) -> void:
+	white_shift += dir
+	if white_shift > 6:
+		if start_note + 12 > 84:
+			white_shift = 6
+		else:
+			white_shift = 0
+			start_note += 12
+	elif white_shift < 0:
+		if start_note - 12 < 24:
+			white_shift = 0
+		else:
+			white_shift = 6
+			start_note -= 12
+	build_keys()
 
 func update_label() -> void:
 	if octave_label:
-		octave_label.text = "C" + str(start_note / 12 - 1)
+		octave_label.text = LETTERS[WHITE_STEPS[white_shift]] + str(start_note / 12 - 1)
 
 func build_keys() -> void:
 	keys.clear()
@@ -193,10 +219,12 @@ func build_keys() -> void:
 	var left := 0.0 if side_on_right else SIDE
 	var w := (size.x - SIDE) / white_count
 	for i in white_count:
-		keys.append({"rect": Rect2(left + i * w, 0, w, size.y), "offset": (i / 7) * 12 + WHITE_STEPS[i % 7], "black": false})
+		var j := i + white_shift
+		keys.append({"rect": Rect2(left + i * w, 0, w, size.y), "offset": (j / 7) * 12 + WHITE_STEPS[j % 7], "black": false})
 	for i in white_count - 1:
-		if BLACK_AFTER.has(i % 7):
-			keys.append({"rect": Rect2(left + (i + 1) * w - w * 0.3, 0, w * 0.6, size.y * 0.6), "offset": (i / 7) * 12 + BLACK_AFTER[i % 7], "black": true})
+		var j := i + white_shift
+		if BLACK_AFTER.has(j % 7):
+			keys.append({"rect": Rect2(left + (i + 1) * w - w * 0.3, 0, w * 0.6, size.y * 0.6), "offset": (j / 7) * 12 + BLACK_AFTER[j % 7], "black": true})
 	update_label()
 	queue_redraw()
 
@@ -412,7 +440,7 @@ func set_pedal(on: bool) -> void:
 
 func script_off(note: int) -> void:
 	for v in voices:
-		if v.held and v.key == 1000 + note:
+		if v.held and not v.pedal and v.key == 1000 + note:
 			if sustain_on:
 				v.pedal = true
 			else:
@@ -437,6 +465,10 @@ func script_on(note: int, vel: float = 1.0) -> void:
 		p.volume_db = linear_to_db(maxf(vel * level, 0.0001))
 		p.play()
 		return
+	for v in voices:
+		if v.pedal and v.key == 1000 + note:
+			v.pedal = false
+			v.held = false
 	var chosen: Voice = voices[0]
 	for v in voices:
 		if not v.held and v.amp < 0.01:
