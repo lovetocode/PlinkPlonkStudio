@@ -31,8 +31,8 @@ func _ready() -> void:
 	root.add_child(bar)
 	add_btn(bar, "Play All", 110, play_all)
 	add_btn(bar, "Stop All", 110, stop_all)
-	add_btn(bar, "Load WAV", 120, func(): fd.popup_centered_ratio(0.8))
-	add_btn(bar, "Export WAV", 140, func(): fd2.popup_centered_ratio(0.8))
+	add_btn(bar, "Load WAV", 120, func(): WebIO.show(fd))
+	add_btn(bar, "Export WAV", 140, ask_export)
 	master_label = make_label("Master", 70)
 	bar.add_child(master_label)
 	var master := make_slider(0.0, 1.5, 1.0, 160)
@@ -319,9 +319,14 @@ func finish_export() -> void:
 	exporting = false
 	if rec:
 		rec.save_to_wav(export_path)
+		WebIO.download(export_path)   # add this
 		exported.emit(export_path)
 		
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), colors.border)
 	if tracks.is_empty():
 		draw_string(ThemeDB.fallback_font, Vector2(16, 130), "No tracks yet: Load WAV, or File > Send take to mixer", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, text_color())
+
+func ask_export() -> void:
+	fd2.current_file = "mix.wav"
+	WebIO.show(fd2)

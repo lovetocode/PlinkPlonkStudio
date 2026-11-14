@@ -208,6 +208,10 @@ func build_top_bar() -> void:
 	sb.value_changed.connect(set_bpm)
 	top_row.add_child(sb)
 	style_bar()
+	if OS.has_feature("web"):
+		var pm := file_menu.get_popup()
+		for id in [8, 9, 10, 11]:
+			pm.set_item_disabled(pm.get_item_index(id), true)
 	
 func set_theremin_voice(i: int) -> void:
 	theremin.set_voice(THEREMIN.VOICES.keys()[i])
@@ -279,9 +283,9 @@ func on_file_item(id: int) -> void:
 		send_take()
 	elif id == 3:
 		proj_save_fd.current_file = "project.pps"
-		proj_save_fd.popup_centered_ratio(0.8)
+		WebIO.show(proj_save_fd)
 	elif id == 4:
-		proj_open_fd.popup_centered_ratio(0.8)
+		WebIO.show(proj_open_fd)
 	elif id == 5:
 		take_as_backing()
 	elif id == 6:
@@ -546,7 +550,7 @@ func swap_hands() -> void:
 	hands_swapped = not hands_swapped
 
 func pick() -> void:
-	fd.popup_centered_ratio(0.8)
+	WebIO.show(fd)
 
 func on_file(path: String) -> void:
 	var wav := AudioStreamWAV.load_from_file(path)
@@ -591,7 +595,7 @@ func save_take() -> void:
 	if last_take == null:
 		return
 	save_fd.current_file = "take.wav"
-	save_fd.popup_centered_ratio(0.8)
+	save_fd.WebIO.show(save_fd)
 
 func on_save_path(path: String) -> void:
 	var err := last_take.save_to_wav(path)

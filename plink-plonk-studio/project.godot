@@ -17,12 +17,17 @@ config/icon="uid://d0qnavuxn3o48"
 
 [audio]
 
+general/default_playback_type.web=0
 driver/enable_input=true
 
 [display]
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
 
 [physics]
 

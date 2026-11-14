@@ -323,7 +323,9 @@ func _ready() -> void:
 	add_btn(bar, "Save", 80, func(): pick_script(true))
 	add_btn(bar, "Load", 80, func(): pick_script(false))
 	add_btn(bar, "WAV", 80, func(): pick_export("wav"))
-	add_btn(bar, "MP4", 80, func(): pick_export("mp4"))
+	var mp4_btn := add_btn(bar, "MP4", 80, func(): pick_export("mp4"))
+	if OS.has_feature("web"):
+		mp4_btn.visible = false
 	add_btn(bar, "MIDI", 90, func(): pick_export("mid"))
 	add_btn(bar, "To mixer", 110, func(): render_to("mixer"))
 	add_btn(bar, "To seq", 90, func(): render_to("seq"))
@@ -447,7 +449,7 @@ func pick_script(save: bool) -> void:
 		fd.current_dir = script_dir
 	if save:
 		fd.current_file = "song.plonk"
-	fd.popup_centered_ratio(0.8)
+	WebIO.show(fd)
 
 func pick_export(kind: String) -> void:
 	fd_kind = "export_" + kind
@@ -464,7 +466,7 @@ func pick_export(kind: String) -> void:
 			fd.current_file = "song.mid"
 	if script_dir != "":
 		fd.current_dir = script_dir
-	fd.popup_centered_ratio(0.8)
+	WebIO.show(fd)
 
 func on_fd_pick(path: String) -> void:
 	match fd_kind:
@@ -1659,6 +1661,7 @@ func finish_export(ok: bool) -> void:
 		show_status("WAV saved. Making the MP4...")
 		exporter.make_mp4(export_wav_path, export_mp4_path)
 	else:
+		WebIO.download(export_wav_path)   # add this
 		show_status("Saved " + export_wav_path)
 
 # ---------------- export: MIDI ----------------

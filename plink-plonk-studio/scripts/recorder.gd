@@ -84,7 +84,7 @@ func _ready() -> void:
 	save_fd.file_selected.connect(on_save_path)
 	add_child(save_fd)
 	
-	make_btn(row2, "Load WAV", 140, func(): load_fd.popup_centered_ratio(0.8))
+	make_btn(row2, "Load WAV", 140, func(): WebIO.show(load_fd))
 	load_fd = FileDialog.new()
 	load_fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	load_fd.access = FileDialog.ACCESS_FILESYSTEM
@@ -184,7 +184,7 @@ func save_clip() -> void:
 	if clip == null:
 		return
 	save_fd.current_file = "sound.wav"
-	save_fd.popup_centered_ratio(0.8)
+	WebIO.show(save_fd)
 
 func on_save_path(path: String) -> void:
 	if clip.save_to_wav(path) != OK:

@@ -9,7 +9,7 @@ const TOP_H := 120.0
 const BOT_H := 64.0
 const OUT_RATE := 44100
 const POOL := 16
-const BAR_OPTIONS := [4, 8, 16, 32]
+const BAR_OPTIONS := [4, 8, 16, 32, 64, 128]
 const SNAPS := [0.25, 0.5, 1.0, 4.0]
 const SNAP_NAMES := ["Snap 1/16", "Snap 1/8", "Snap 1/4", "Snap bar"]
 const ZOOMS := [20.0, 40.0, 80.0, 160.0]
@@ -84,7 +84,7 @@ func _ready() -> void:
 	drum_menu.get_popup().id_pressed.connect(on_drum_item)
 	head.add_child(drum_menu)
 	add_btn(head, "+ Lane", 110, add_empty_lane)
-	add_btn(head, "Load WAV", 130, func(): fd.popup_centered_ratio(0.8))
+	add_btn(head, "Load WAV", 130, func(): WebIO.show(fd))
 	snap_btn = OptionButton.new()
 	snap_btn.custom_minimum_size = Vector2(150, 50)
 	for n in SNAP_NAMES:
