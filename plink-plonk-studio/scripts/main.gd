@@ -16,10 +16,12 @@ const TOP_BAR := 120.0
 const SING := preload("res://scripts/sing.gd")
 const SEQ := preload("res://scripts/sequencer.gd")
 const PLONK := preload("res://scripts/plonk.gd")
+const DRAWPAD := preload("res://scripts/draw_pad.gd")
+var drawpad
 var plonk
 var sequencer
 
-const AREAS := ["Piano", "Drums", "Piano + Drums", "mixer", "Theremin", "sing", "record", "Sequencer", "PlonkScript"]
+const AREAS := ["Piano", "Drums", "Piano + Drums", "mixer", "Theremin", "sing", "record", "Sequencer", "PlonkScript", "Draw"]
 const SOUNDS := ["Square", "Piano", "Organ", "E-Piano", "Harpsichord", "Xylophone", "Glass Harmonica", "Guitar", "Bass", "Sample", "Saw", "Chip Saw", "Pulse 12", "Pulse 25", "Triangle", "8-Bit Noise", "8-Bit Metal", "VRC6 Saw" , "Curtis Wah", "Curtis Clean"]
 
 const AUTO_BEATS := [1.0, 0.5, 2.0]
@@ -147,6 +149,12 @@ func _ready() -> void:
 	plonk.drums = drums
 	plonk.theremin = theremin
 	vbox.add_child(plonk)
+	
+	drawpad = DRAWPAD.new()
+	drawpad.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	drawpad.bpm = bpm
+	drawpad.render_ready.connect(on_draw_render)
+	vbox.add_child(drawpad)
 
 	build_top_bar()
 	set_area(0)
@@ -265,11 +273,11 @@ func apply_theme() -> void:
 	var p := view_menu.get_popup()
 	for i in THEMES.size():
 		p.set_item_text(i, ("● " if i == theme_index else "    ") + THEMES[i].name)
-	for c in kbs + [drums, mixer, theremin, sing, recorder, sequencer, plonk]:
+	for c in kbs + [drums, mixer, theremin, sing, recorder, sequencer, plonk, drawpad]:
 		c.colors = t
 		c.queue_redraw()
 	var th := make_theme(t)
-	for c in [mixer, sing, recorder, sequencer, plonk]:
+	for c in [mixer, sing, recorder, sequencer, plonk, drawpad]:
 		c.theme = th
 	if top_row and bar_bg:
 		style_bar()
@@ -351,6 +359,7 @@ func save_project(path: String) -> void:
 		"sing": sing.get_settings(),
 		"seq": sequencer.get_state(),
 		"plonk": plonk.editor.text,
+		"draw": drawpad.get_state(),
 	})
 	f.close()
 
@@ -374,6 +383,7 @@ func load_project(path: String) -> void:
 	mixer.set_state(d.get("tracks", []))
 	
 	sequencer.set_state(d.get("seq", {}))
+	drawpad.set_state(d.get("draw", {}))
 
 	var kw := unpack_wav(d.get("keyboard", {}))
 	var sample_idx := SOUNDS.find("Sample")
@@ -448,6 +458,7 @@ func set_area(i: int) -> void:
 	sequencer.visible = (i == 7)
 	plonk.visible = (i == 8)
 	var on_drums := (i == 1 or i == 2)
+	drawpad.visible = (i == 9)
 	if swap_btn:
 		swap_btn.visible = on_drums
 		auto_btn.visible = on_drums
@@ -636,6 +647,9 @@ func set_bpm(v: float) -> void:
 		
 	if sequencer:
 		sequencer.bpm = bpm
+		
+	if drawpad:
+		drawpad.bpm = bpm
 	
 
 func take_as_backing() -> void:
@@ -852,3 +866,11 @@ func on_plonk_rendered(wav: AudioStreamWAV, target: String) -> void:
 	else:
 		mixer.add_track("Song " + str(take_count), wav)
 		set_area(3)
+		
+func on_draw_render(list: Array, target: String) -> void:
+	for e in list:
+		if target == "seq":
+			sequencer.put_sound(e.name, e.wav)
+		else:
+			mixer.add_track(e.name, e.wav)
+	set_area(7 if target == "seq" else 3)
